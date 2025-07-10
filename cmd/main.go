@@ -351,7 +351,7 @@ func main() {
 	}
 
 	// Root command flags
-	rootCmd.Flags().StringVarP(&provider, "provider", "p", "", "AI provider (openai, openai_compatible, azure_openai, anthropic, gemini, or deepseek)")
+	rootCmd.Flags().StringVarP(&provider, "provider", "p", "", "AI provider (openai, openai_compatible, azure_openai, anthropic, gemini, or deepseek). If not specified, uses default_provider from config file")
 	rootCmd.Flags().StringVarP(&input, "input", "i", "", "User input")
 	rootCmd.Flags().StringVarP(&systemPrompt, "system", "s", "", "System prompt (optional, uses default if not provided)")
 	rootCmd.Flags().BoolVarP(&debug, "debug", "d", false, "Enable debug logging")
@@ -384,9 +384,8 @@ func main() {
 	rootCmd.AddCommand(updateCmd)
 	rootCmd.AddCommand(configCmd)
 
-	// Only require provider and input for the main fetch command
+	// Only require input for the main fetch command (provider is optional, will use default from config)
 	if len(os.Args) > 1 && os.Args[1] != "proxy" && os.Args[1] != "rotate-logs" {
-		rootCmd.MarkFlagRequired("provider")
 		rootCmd.MarkFlagRequired("input")
 	}
 
@@ -402,6 +401,29 @@ func main() {
 }
 
 func runFetch(cmd *cobra.Command, args []string) {
+	// Load configuration to get default provider if needed
+	if provider == "" {
+		cfg, err := config.LoadConfigFromEnv()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: Failed to load configuration: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Please set SMART_SUGGESTION_PROVIDER_FILE environment variable or use --provider flag\n")
+			os.Exit(1)
+		}
+		
+		if cfg.DefaultProvider == "" {
+			fmt.Fprintf(os.Stderr, "Error: No provider specified and no default_provider configured\n")
+			fmt.Fprintf(os.Stderr, "Please set default_provider in config file or use --provider flag\n")
+			os.Exit(1)
+		}
+		
+		provider = cfg.DefaultProvider
+		if debug {
+			logDebug("Using default provider from config", map[string]any{
+				"provider": provider,
+			})
+		}
+	}
+
 	if systemPrompt == "" {
 		systemPrompt = defaultSystemPrompt
 	}
