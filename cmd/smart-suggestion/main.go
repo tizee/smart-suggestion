@@ -25,6 +25,7 @@ import (
 	"github.com/creack/pty"
 	"github.com/spf13/cobra"
 	"github.com/yetone/smart-suggestion/pkg"
+	"github.com/yetone/smart-suggestion/pkg/config"
 	"golang.org/x/term"
 )
 
@@ -330,8 +331,27 @@ func main() {
 		Run:   runUpdate,
 	}
 
+	// Add config command with subcommands
+	var configCmd = &cobra.Command{
+		Use:   "config",
+		Short: "Manage configuration",
+	}
+
+	var configInitCmd = &cobra.Command{
+		Use:   "init",
+		Short: "Generate configuration template (outputs to stdout by default)",
+		Long:  "Generate a configuration template with default values. By default, outputs to stdout. Use --file to write directly to a file.",
+		Run:   runConfigInit,
+	}
+
+	var configValidateCmd = &cobra.Command{
+		Use:   "validate",
+		Short: "Validate configuration file",
+		Run:   runConfigValidate,
+	}
+
 	// Root command flags
-	rootCmd.Flags().StringVarP(&provider, "provider", "p", "", "AI provider (openai, azure_openai, anthropic, gemini, or deepseek)")
+	rootCmd.Flags().StringVarP(&provider, "provider", "p", "", "AI provider (openai, openai_compatible, azure_openai, anthropic, gemini, or deepseek)")
 	rootCmd.Flags().StringVarP(&input, "input", "i", "", "User input")
 	rootCmd.Flags().StringVarP(&systemPrompt, "system", "s", "", "System prompt (optional, uses default if not provided)")
 	rootCmd.Flags().BoolVarP(&debug, "debug", "d", false, "Enable debug logging")
@@ -350,10 +370,19 @@ func main() {
 	// Update command flags
 	updateCmd.Flags().BoolP("check-only", "c", false, "Only check for updates, don't install")
 
+	// Config command flags
+	configInitCmd.Flags().StringP("file", "f", "", "Write configuration to file instead of stdout")
+	configValidateCmd.Flags().StringP("file", "f", "", "Configuration file path (default: $SMART_SUGGESTION_PROVIDER_FILE)")
+
+	// Add config subcommands
+	configCmd.AddCommand(configInitCmd)
+	configCmd.AddCommand(configValidateCmd)
+
 	rootCmd.AddCommand(proxyCmd)
 	rootCmd.AddCommand(rotateCmd)
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(updateCmd)
+	rootCmd.AddCommand(configCmd)
 
 	// Only require provider and input for the main fetch command
 	if len(os.Args) > 1 && os.Args[1] != "proxy" && os.Args[1] != "rotate-logs" {
@@ -402,6 +431,8 @@ func runFetch(cmd *cobra.Command, args []string) {
 	switch strings.ToLower(provider) {
 	case "openai":
 		suggestion, err = fetchOpenAI()
+	case "openai_compatible":
+		suggestion, err = fetchOpenAICompatible()
 	case "azure_openai":
 		suggestion, err = fetchAzureOpenAI()
 	case "anthropic":
@@ -449,14 +480,19 @@ func runFetch(cmd *cobra.Command, args []string) {
 }
 
 func fetchOpenAI() (string, error) {
-	apiKey := os.Getenv("OPENAI_API_KEY")
-	if apiKey == "" {
-		return "", fmt.Errorf("OPENAI_API_KEY environment variable is not set")
+	cfg, err := config.LoadConfigFromEnv()
+	if err != nil {
+		return "", fmt.Errorf("failed to load configuration: %w", err)
 	}
 
-	baseURL := os.Getenv("OPENAI_BASE_URL")
-	if baseURL == "" {
-		baseURL = "https://api.openai.com"
+	apiKey, err := cfg.GetAPIKey("openai")
+	if err != nil {
+		return "", fmt.Errorf("OpenAI API key not configured: %w", err)
+	}
+
+	baseURL := "https://api.openai.com"
+	if cfg.OpenAI != nil && cfg.OpenAI.BaseURL != "" {
+		baseURL = cfg.OpenAI.BaseURL
 	}
 
 	// Handle different base URL formats
@@ -470,8 +506,13 @@ func fetchOpenAI() (string, error) {
 		url = fmt.Sprintf("https://%s/v1/chat/completions", baseURL)
 	}
 
+	model := "gpt-4o-mini"
+	if cfg.OpenAI != nil && cfg.OpenAI.Model != "" {
+		model = cfg.OpenAI.Model
+	}
+
 	request := OpenAIRequest{
-		Model: "gpt-4o-mini",
+		Model: model,
 		Messages: []OpenAIMessage{
 			{Role: "system", Content: systemPrompt},
 			{Role: "user", Content: input},
@@ -537,25 +578,161 @@ func fetchOpenAI() (string, error) {
 	return response.Choices[0].Message.Content, nil
 }
 
+func fetchOpenAICompatible() (string, error) {
+	cfg, err := config.LoadConfigFromEnv()
+	if err != nil {
+		return "", fmt.Errorf("failed to load configuration: %w", err)
+	}
+
+	apiKey, err := cfg.GetAPIKey("openai_compatible")
+	if err != nil {
+		return "", fmt.Errorf("OpenAI Compatible API key not configured: %w", err)
+	}
+
+	baseURL := "http://localhost:11434"
+	if cfg.OpenAICompatible != nil && cfg.OpenAICompatible.BaseURL != "" {
+		baseURL = cfg.OpenAICompatible.BaseURL
+	}
+
+	// Handle different base URL formats
+	var url string
+	if strings.HasPrefix(baseURL, "http://") || strings.HasPrefix(baseURL, "https://") {
+		// Base URL already includes protocol
+		baseURL = strings.TrimSuffix(baseURL, "/")
+		// If URL contains /chat/completions, use it directly
+		if strings.Contains(baseURL, "/chat/completions") {
+			url = baseURL
+		} else {
+			// Otherwise add the standard OpenAI path
+			url = fmt.Sprintf("%s/v1/chat/completions", baseURL)
+		}
+	} else {
+		// Base URL is just hostname, add https protocol and standard path
+		url = fmt.Sprintf("https://%s/v1/chat/completions", baseURL)
+	}
+
+	model := "llama3.2:latest"
+	if cfg.OpenAICompatible != nil && cfg.OpenAICompatible.Model != "" {
+		model = cfg.OpenAICompatible.Model
+	}
+
+	request := OpenAIRequest{
+		Model: model,
+		Messages: []OpenAIMessage{
+			{Role: "system", Content: systemPrompt},
+			{Role: "user", Content: input},
+		},
+	}
+
+	jsonData, err := json.Marshal(request)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	if debug {
+		logDebug("Sending OpenAI Compatible request", map[string]any{
+			"url":          url,
+			"method":       "POST",
+			"content_type": "application/json",
+			"has_api_key":  apiKey != "",
+			"model":        model,
+			"base_url":     baseURL,
+			"request":      string(jsonData),
+		})
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	// Only add Authorization header if API key is provided (some local services don't need it)
+	if apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if debug {
+		logDebug("Received OpenAI Compatible response", map[string]any{
+			"status":      resp.Status,
+			"status_code": resp.StatusCode,
+			"headers":     resp.Header,
+			"body_length": len(body),
+			"response":    string(body),
+		})
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		if debug {
+			logDebug("OpenAI Compatible API request failed", map[string]any{
+				"status_code": resp.StatusCode,
+				"status":      resp.Status,
+				"url":         url,
+				"method":      "POST",
+				"response":    string(body),
+				"headers":     resp.Header,
+			})
+		}
+		return "", fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var response OpenAIResponse
+	if err := json.Unmarshal(body, &response); err != nil {
+		return "", fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	if response.Error != nil {
+		return "", fmt.Errorf("OpenAI Compatible API error: %s", response.Error.Message)
+	}
+
+	if len(response.Choices) == 0 {
+		return "", fmt.Errorf("no choices returned from OpenAI Compatible API")
+	}
+
+	return response.Choices[0].Message.Content, nil
+}
+
 func fetchAzureOpenAI() (string, error) {
-	apiKey := os.Getenv("AZURE_OPENAI_API_KEY")
-	if apiKey == "" {
-		return "", fmt.Errorf("AZURE_OPENAI_API_KEY environment variable is not set")
+	cfg, err := config.LoadConfigFromEnv()
+	if err != nil {
+		return "", fmt.Errorf("failed to load configuration: %w", err)
+	}
+
+	azureConfig, err := cfg.GetAzureOpenAIConfig()
+	if err != nil {
+		return "", fmt.Errorf("Azure OpenAI configuration not found: %w", err)
+	}
+
+	apiKey, err := cfg.GetAPIKey("azure_openai")
+	if err != nil {
+		return "", fmt.Errorf("Azure OpenAI API key not configured: %w", err)
 	}
 
 	// Get deployment name - required for both custom and standard URLs
-	deploymentName := os.Getenv("AZURE_OPENAI_DEPLOYMENT_NAME")
+	deploymentName := azureConfig.DeploymentName
 	if deploymentName == "" {
-		return "", fmt.Errorf("AZURE_OPENAI_DEPLOYMENT_NAME environment variable is not set")
+		return "", fmt.Errorf("Azure OpenAI deployment name not configured")
 	}
 
 	// Check if custom base URL is provided
-	baseURL := os.Getenv("AZURE_OPENAI_BASE_URL")
+	baseURL := azureConfig.BaseURL
 	var url string
 
 	if baseURL != "" {
 		// Custom base URL provided - use it directly
-		apiVersion := os.Getenv("AZURE_OPENAI_API_VERSION")
+		apiVersion := azureConfig.APIVersion
 		if apiVersion == "" {
 			apiVersion = "2024-10-21" // Default to latest stable version
 		}
@@ -571,13 +748,13 @@ func fetchAzureOpenAI() (string, error) {
 		}
 	} else {
 		// Standard Azure OpenAI format - requires resource name and deployment name
-		resourceName := os.Getenv("AZURE_OPENAI_RESOURCE_NAME")
+		resourceName := azureConfig.ResourceName
 		if resourceName == "" {
-			return "", fmt.Errorf("AZURE_OPENAI_RESOURCE_NAME environment variable is not set")
+			return "", fmt.Errorf("Azure OpenAI resource name not configured")
 		}
 
 		// API version for Azure OpenAI
-		apiVersion := os.Getenv("AZURE_OPENAI_API_VERSION")
+		apiVersion := azureConfig.APIVersion
 		if apiVersion == "" {
 			apiVersion = "2024-10-21" // Default to latest stable version
 		}
@@ -656,14 +833,19 @@ func fetchAzureOpenAI() (string, error) {
 }
 
 func fetchAnthropic() (string, error) {
-	apiKey := os.Getenv("ANTHROPIC_API_KEY")
-	if apiKey == "" {
-		return "", fmt.Errorf("ANTHROPIC_API_KEY environment variable is not set")
+	cfg, err := config.LoadConfigFromEnv()
+	if err != nil {
+		return "", fmt.Errorf("failed to load configuration: %w", err)
 	}
 
-	baseURL := os.Getenv("ANTHROPIC_BASE_URL")
-	if baseURL == "" {
-		baseURL = "https://api.anthropic.com"
+	apiKey, err := cfg.GetAPIKey("anthropic")
+	if err != nil {
+		return "", fmt.Errorf("Anthropic API key not configured: %w", err)
+	}
+
+	baseURL := "https://api.anthropic.com"
+	if cfg.Anthropic != nil && cfg.Anthropic.BaseURL != "" {
+		baseURL = cfg.Anthropic.BaseURL
 	}
 
 	// Handle different base URL formats
@@ -677,8 +859,13 @@ func fetchAnthropic() (string, error) {
 		url = fmt.Sprintf("https://%s/v1/messages", baseURL)
 	}
 
+	model := "claude-3-5-sonnet-20241022"
+	if cfg.Anthropic != nil && cfg.Anthropic.Model != "" {
+		model = cfg.Anthropic.Model
+	}
+
 	request := AnthropicRequest{
-		Model:     "claude-3-5-sonnet-20241022",
+		Model:     model,
 		MaxTokens: 1000,
 		System:    systemPrompt,
 		Messages: []AnthropicMessage{
@@ -948,19 +1135,24 @@ func getUserID() (string, error) {
 }
 
 func fetchGemini() (string, error) {
-	apiKey := os.Getenv("GEMINI_API_KEY")
-	if apiKey == "" {
-		return "", fmt.Errorf("GEMINI_API_KEY environment variable is not set")
+	cfg, err := config.LoadConfigFromEnv()
+	if err != nil {
+		return "", fmt.Errorf("failed to load configuration: %w", err)
 	}
 
-	baseURL := os.Getenv("GEMINI_BASE_URL")
-	if baseURL == "" {
-		baseURL = "https://generativelanguage.googleapis.com"
+	apiKey, err := cfg.GetAPIKey("gemini")
+	if err != nil {
+		return "", fmt.Errorf("Gemini API key not configured: %w", err)
 	}
 
-	model := os.Getenv("GEMINI_MODEL")
-	if model == "" {
-		model = "gemini-2.5-flash"
+	baseURL := "https://generativelanguage.googleapis.com"
+	if cfg.Gemini != nil && cfg.Gemini.BaseURL != "" {
+		baseURL = cfg.Gemini.BaseURL
+	}
+
+	model := "gemini-2.5-flash"
+	if cfg.Gemini != nil && cfg.Gemini.Model != "" {
+		model = cfg.Gemini.Model
 	}
 
 	// Handle different base URL formats
@@ -1782,14 +1974,19 @@ func runRotateLogs(cmd *cobra.Command, args []string) {
 }
 
 func fetchDeepSeek() (string, error) {
-	apiKey := os.Getenv("DEEPSEEK_API_KEY")
-	if apiKey == "" {
-		return "", fmt.Errorf("DEEPSEEK_API_KEY environment variable is not set")
+	cfg, err := config.LoadConfigFromEnv()
+	if err != nil {
+		return "", fmt.Errorf("failed to load configuration: %w", err)
 	}
 
-	baseURL := os.Getenv("DEEPSEEK_BASE_URL")
-	if baseURL == "" {
-		baseURL = "https://api.deepseek.com"
+	apiKey, err := cfg.GetAPIKey("deepseek")
+	if err != nil {
+		return "", fmt.Errorf("DeepSeek API key not configured: %w", err)
+	}
+
+	baseURL := "https://api.deepseek.com"
+	if cfg.DeepSeek != nil && cfg.DeepSeek.BaseURL != "" {
+		baseURL = cfg.DeepSeek.BaseURL
 	}
 
 	// Handle different base URL formats
@@ -1803,10 +2000,10 @@ func fetchDeepSeek() (string, error) {
 		url = fmt.Sprintf("https://%s/chat/completions", baseURL)
 	}
 
-	// Get model from environment or use default
-	model := os.Getenv("DEEPSEEK_MODEL")
-	if model == "" {
-		model = "deepseek-chat" // Default to deepseek-chat which points to DeepSeek-V3-0324
+	// Get model from configuration or use default
+	model := "deepseek-chat" // Default to deepseek-chat which points to DeepSeek-V3-0324
+	if cfg.DeepSeek != nil && cfg.DeepSeek.Model != "" {
+		model = cfg.DeepSeek.Model
 	}
 
 	request := DeepSeekRequest{
@@ -2142,4 +2339,93 @@ func copyFile(src, dst string) error {
 
 	_, err = io.Copy(destination, source)
 	return err
+}
+
+// runConfigInit initializes a new configuration file
+func runConfigInit(cmd *cobra.Command, args []string) {
+	configFile, _ := cmd.Flags().GetString("file")
+	
+	// Create default configuration
+	defaultConfig := config.DefaultConfig()
+	
+	if configFile == "" {
+		// No file specified, output to stdout
+		data, err := json.MarshalIndent(defaultConfig, "", "  ")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: Failed to marshal configuration: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println(string(data))
+		return
+	}
+	
+	// File specified, write to file
+	// Check if config file already exists
+	if _, err := os.Stat(configFile); err == nil {
+		fmt.Fprintf(os.Stderr, "Configuration file already exists at: %s\n", configFile)
+		fmt.Fprint(os.Stderr, "Do you want to overwrite it? (y/N): ")
+		
+		var response string
+		fmt.Scanln(&response)
+		if response != "y" && response != "Y" {
+			fmt.Fprintln(os.Stderr, "Configuration initialization cancelled.")
+			return
+		}
+	}
+
+	// Save configuration to file
+	if err := defaultConfig.SaveConfig(configFile); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: Failed to create configuration file: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Set secure permissions
+	if err := config.SetSecureFilePermissions(configFile); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: Failed to set secure permissions on config file: %v\n", err)
+	}
+
+	fmt.Fprintf(os.Stderr, "Configuration file created successfully at: %s\n", configFile)
+	fmt.Fprintln(os.Stderr, "\nPlease edit the configuration file to add your API keys.")
+}
+
+// runConfigValidate validates the configuration file
+func runConfigValidate(cmd *cobra.Command, args []string) {
+	configFile, _ := cmd.Flags().GetString("file")
+	if configFile == "" {
+		configFile = os.Getenv("SMART_SUGGESTION_PROVIDER_FILE")
+		if configFile == "" {
+			fmt.Fprintf(os.Stderr, "Error: Configuration file path not specified. Use --file flag or set SMART_SUGGESTION_PROVIDER_FILE environment variable.\n")
+			os.Exit(1)
+		}
+	}
+
+	// Load configuration
+	cfg, err := config.LoadConfig(configFile)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: Failed to load configuration: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Validate configuration
+	if err := cfg.Validate(); err != nil {
+		fmt.Fprintf(os.Stderr, "Configuration validation failed:\n%v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Configuration file is valid: %s\n", configFile)
+	
+	// Check which providers are configured
+	fmt.Println("\nConfigured providers:")
+	providers := []string{"openai", "openai_compatible", "azure_openai", "anthropic", "gemini", "deepseek"}
+	for _, provider := range providers {
+		if _, err := cfg.GetAPIKey(provider); err == nil {
+			fmt.Printf("  ✓ %s\n", provider)
+		} else {
+			fmt.Printf("  ✗ %s (not configured)\n", provider)
+		}
+	}
+
+	if cfg.DefaultProvider != "" {
+		fmt.Printf("\nDefault provider: %s\n", cfg.DefaultProvider)
+	}
 }

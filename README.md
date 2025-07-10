@@ -4,7 +4,7 @@
 >
 > This project is a fork of [zsh-copilot](https://github.com/Myzel394/zsh-copilot) by [Myzel394](https://github.com/Myzel394).
 
-Get AI-powered command suggestions **directly** in your zsh shell. No complex setup, no external tools - just press `CTRL + O` and get intelligent command suggestions powered by OpenAI, Anthropic Claude, Google Gemini, or DeepSeek.
+Get AI-powered command suggestions **directly** in your zsh shell. No complex setup, no external tools - just press `CTRL + O` and get intelligent command suggestions powered by OpenAI, Anthropic Claude, Google Gemini, DeepSeek, or any OpenAI-compatible API.
 
 > [!NOTE]
 >
@@ -17,7 +17,7 @@ Get AI-powered command suggestions **directly** in your zsh shell. No complex se
 ## Features
 
 - **🚀 Context-aware intelligent prediction**: Predicts the next command you are likely to input based on context (history, aliases, terminal buffer)
-- **🤖 Multiple AI Providers**: Support for OpenAI GPT, Anthropic Claude, Google Gemini, and DeepSeek
+- **🤖 Multiple AI Providers**: Support for OpenAI GPT, Anthropic Claude, Google Gemini, DeepSeek, and any OpenAI-compatible API
 - **🔧 Highly Configurable**: Customize keybindings, AI provider, context sharing, and more
 
 ## Questions
@@ -155,40 +155,152 @@ source ~/.zshrc
 
 ### AI Provider Setup
 
-You need an API key for at least one of the supported AI providers:
+**Important**: Starting with the new version, API keys are now configured via JSON configuration files instead of environment variables for better security. The `SMART_SUGGESTION_PROVIDER_FILE` environment variable should point to your configuration file.
 
-#### OpenAI (default)
+#### Quick Setup
 
+1. **Generate a configuration template**:
 ```bash
-export OPENAI_API_KEY="your-openai-api-key"
+smart-suggestion config init > ~/.config/smart-suggestion/config.json
 ```
 
-#### Azure OpenAI
-
+2. **Edit the configuration file** to add your API keys:
 ```bash
-export AZURE_OPENAI_API_KEY="your-azure-openai-api-key" # i.e. c0123456789012345678901234567890
-export AZURE_OPENAI_RESOURCE_NAME="your-azure-openai-resource-name" # i.e. awesome-corp when your endpoint is https://awesome-corp.openai.azure.com
-export AZURE_OPENAI_DEPLOYMENT_NAME="your-deployment-name" # i.e. gpt-4o
-export AZURE_OPENAI_API_VERSION="2024-10-21"  # Optional, defaults to 2024-10-21
-export AZURE_OPENAI_BASE_URL="https://your-azure-openai-base-url" # Optional, default to https://$AZURE_OPENAI_RESOURCE_NAME.openai.azure.com
+nano ~/.config/smart-suggestion/config.json
 ```
 
-#### Anthropic Claude
-
+3. **Set the configuration file path** (if not using the default):
 ```bash
-export ANTHROPIC_API_KEY="your-anthropic-api-key"
+export SMART_SUGGESTION_PROVIDER_FILE="~/.config/smart-suggestion/config.json"
 ```
 
-#### Google Gemini
+#### Configuration Examples
 
-```bash
-export GEMINI_API_KEY="your-gemini-api-key"
+**OpenAI (default)**:
+```json
+{
+  "openai": {
+    "api_key": "your-openai-api-key",
+    "base_url": "https://api.openai.com",
+    "model": "gpt-4o-mini"
+  },
+  "default_provider": "openai"
+}
 ```
 
-#### DeepSeek
+**OpenAI-Compatible APIs** (Ollama, OpenRouter, etc.):
+```json
+{
+  "openai_compatible": {
+    "api_key": "your-api-key",
+    "base_url": "https://openrouter.ai/api",
+    "model": "anthropic/claude-3.5-sonnet"
+  },
+  "default_provider": "openai_compatible"
+}
+```
 
+**Azure OpenAI**:
+```json
+{
+  "azure_openai": {
+    "api_key": "your-azure-openai-api-key",
+    "resource_name": "your-azure-openai-resource-name",
+    "deployment_name": "your-deployment-name",
+    "api_version": "2024-10-21",
+    "base_url": "https://your-custom-base-url"
+  },
+  "default_provider": "azure_openai"
+}
+```
+
+**Azure OpenAI Configuration Notes**:
+- `api_key`: Your Azure OpenAI API key (e.g., `c0123456789012345678901234567890`)
+- `resource_name`: Your Azure OpenAI resource name (e.g., `awesome-corp` when your endpoint is `https://awesome-corp.openai.azure.com`)
+- `deployment_name`: Your deployment name (e.g., `gpt-4o`)
+- `api_version`: Optional, defaults to `2024-10-21`
+- `base_url`: Optional, defaults to `https://{resource_name}.openai.azure.com`. Use this for custom endpoints.
+
+**Important**: You can use either `resource_name` OR `base_url`, but not both. If you provide `base_url`, `resource_name` will be ignored.
+
+**Anthropic Claude**:
+```json
+{
+  "anthropic": {
+    "api_key": "your-anthropic-api-key",
+    "base_url": "https://api.anthropic.com",
+    "model": "claude-3-5-sonnet-20241022"
+  },
+  "default_provider": "anthropic"
+}
+```
+
+**Google Gemini**:
+```json
+{
+  "gemini": {
+    "api_key": "your-gemini-api-key",
+    "base_url": "https://generativelanguage.googleapis.com",
+    "model": "gemini-2.5-flash"
+  },
+  "default_provider": "gemini"
+}
+```
+
+**DeepSeek**:
+```json
+{
+  "deepseek": {
+    "api_key": "your-deepseek-api-key",
+    "base_url": "https://api.deepseek.com",
+    "model": "deepseek-chat"
+  },
+  "default_provider": "deepseek"
+}
+```
+
+#### Popular OpenAI-Compatible Services
+
+The `openai_compatible` provider supports many third-party services:
+
+- **OpenRouter**: Access multiple AI models through one API
+  ```json
+  {
+    "openai_compatible": {
+      "api_key": "your-openrouter-key",
+      "base_url": "https://openrouter.ai/api",
+      "model": "anthropic/claude-3.5-sonnet"
+    }
+  }
+  ```
+
+- **Ollama**: Local AI models
+  ```json
+  {
+    "openai_compatible": {
+      "base_url": "http://localhost:11434",
+      "model": "llama3.2:latest"
+    }
+  }
+  ```
+
+- **Other providers**: LocalAI, vLLM, Text Generation WebUI, etc.
+
+#### Configuration Management
+
+**Validate your configuration**:
 ```bash
-export DEEPSEEK_API_KEY="your-deepseek-api-key"
+smart-suggestion config validate
+```
+
+**View configuration template**:
+```bash
+smart-suggestion config init
+```
+
+**Create configuration file directly**:
+```bash
+smart-suggestion config init --file ~/.config/smart-suggestion/config.json
 ```
 
 ### Environment Variables
@@ -197,7 +309,8 @@ Configure the plugin behavior with these environment variables:
 
 | Variable                           | Description                           | Default       | Options                                                     |
 |------------------------------------|---------------------------------------|---------------|-------------------------------------------------------------|
-| `SMART_SUGGESTION_AI_PROVIDER`     | AI provider to use                    | Auto-detected | `openai`, `azure_openai`, `anthropic`, `gemini`, `deepseek` |
+| `SMART_SUGGESTION_PROVIDER_FILE`   | Path to configuration file            | `~/.config/smart-suggestion/config.json` | Any valid JSON file path |
+| `SMART_SUGGESTION_AI_PROVIDER`     | AI provider to use                    | `openai` | `openai`, `openai_compatible`, `azure_openai`, `anthropic`, `gemini`, `deepseek` |
 | `SMART_SUGGESTION_KEY`             | Keybinding to trigger suggestions     | `^o`          | Any zsh keybinding                                          |
 | `SMART_SUGGESTION_SEND_CONTEXT`    | Send shell context to AI              | `true`        | `true`, `false`                                             |
 | `SMART_SUGGESTION_PROXY_MODE`      | Enable proxy mode for better context  | `true`        | `true`, `false`                                             |
@@ -212,29 +325,73 @@ If `SMART_SUGGESTION_BINARY` is not specified, we look for one in the following 
 1. `smart_suggestion` beside the current `smart-suggestion.plugin.zsh`
 1. `~/.config/smart-suggestion/smart_suggestion`
 
+**Note**: The configuration file path (`SMART_SUGGESTION_PROVIDER_FILE`) defaults to `~/.config/smart-suggestion/config.json` if not specified.
+
 ### Advanced Configuration
 
-#### Custom API URLs
+#### Multiple Providers in One Config
 
-```bash
-export OPENAI_BASE_URL="your-custom-openai-endpoint.com"
-export AZURE_OPENAI_BASE_URL="your-custom-azure-openai-endpoint.com"
-export ANTHROPIC_BASE_URL="your-custom-anthropic-endpoint.com"
-export GEMINI_BASE_URL="your-custom-gemini-endpoint.com"
-export DEEPSEEK_BASE_URL="your-custom-deepseek-endpoint.com"
+You can configure multiple providers in a single configuration file:
+
+```json
+{
+  "openai": {
+    "api_key": "your-openai-key",
+    "model": "gpt-4o-mini"
+  },
+  "openai_compatible": {
+    "api_key": "your-openrouter-key",
+    "base_url": "https://openrouter.ai/api",
+    "model": "anthropic/claude-3.5-sonnet"
+  },
+  "anthropic": {
+    "api_key": "your-anthropic-key",
+    "model": "claude-3-5-sonnet-20241022"
+  },
+  "default_provider": "openai_compatible"
+}
 ```
 
-#### Custom Models
+#### Custom API Endpoints
 
-```bash
-export GEMINI_MODEL="gemini-1.5-pro"  # Default: gemini-1.5-flash
+For `openai_compatible` provider, you can use any OpenAI-compatible API:
+
+```json
+{
+  "openai_compatible": {
+    "api_key": "your-api-key",
+    "base_url": "https://your-custom-endpoint.com",
+    "model": "your-model-name"
+  }
+}
 ```
+
+**Important URL Handling Note**: 
+
+The system automatically handles API endpoint paths:
+- If your `base_url` contains `/chat/completions`, it will be used as-is
+- Otherwise, `/v1/chat/completions` will be automatically appended
+
+Examples:
+- `"base_url": "https://openrouter.ai/api"` → `https://openrouter.ai/api/v1/chat/completions`
+- `"base_url": "https://ark.cn-beijing.volces.com/api/v3/chat/completions"` → Used as-is
+- `"base_url": "http://localhost:11434"` → `http://localhost:11434/v1/chat/completions`
+
+This means you should **NOT** include `/v1` in your base URL for most services, as it will be added automatically.
 
 #### History Lines for Context
+
+Configure how many lines of shell history to include in the context via environment variable:
 
 ```bash
 export SMART_SUGGESTION_HISTORY_LINES="20"  # Default: 10
 ```
+
+#### Configuration File Security
+
+- Configuration files are automatically created with `0600` permissions (readable/writable by owner only)
+- Store your configuration file in a secure location like `~/.config/smart-suggestion/`
+- Never commit configuration files with API keys to version control
 
 ### View Current Configuration
 
@@ -242,6 +399,12 @@ To see all available configurations and their current values:
 
 ```bash
 smart-suggestion
+```
+
+To validate your configuration file:
+
+```bash
+smart-suggestion config validate
 ```
 
 ## Usage
