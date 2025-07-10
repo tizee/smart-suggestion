@@ -31,9 +31,9 @@
 (( ! ${+SMART_SUGGESTION_PROVIDER_FILE} )) &&
     typeset -g SMART_SUGGESTION_PROVIDER_FILE="$HOME/.config/smart-suggestion/config.json"
 
-# Default AI provider (can be overridden)
+# Default AI provider (empty means use default_provider from config file)
 (( ! ${+SMART_SUGGESTION_AI_PROVIDER} )) &&
-    typeset -g SMART_SUGGESTION_AI_PROVIDER="openai"
+    typeset -g SMART_SUGGESTION_AI_PROVIDER=""
 
 if [[ "$SMART_SUGGESTION_DEBUG" == 'true' ]]; then
     touch /tmp/smart-suggestion.log
@@ -81,9 +81,16 @@ function _fetch_suggestions() {
         context_flag="--context"
     fi
 
+    # Prepare provider flag (only if SMART_SUGGESTION_AI_PROVIDER is set and non-empty)
+    # This allows using default_provider from config file when environment variable is not set
+    local provider_flag=""
+    if [[ -n "$SMART_SUGGESTION_AI_PROVIDER" ]]; then
+        provider_flag="--provider $SMART_SUGGESTION_AI_PROVIDER"
+    fi
+
     # Call the Go binary with proper arguments
     "$SMART_SUGGESTION_BINARY" \
-        --provider "$SMART_SUGGESTION_AI_PROVIDER" \
+        $provider_flag \
         --input "$input" \
         --output "/tmp/smart_suggestion" \
         $debug_flag \
@@ -238,7 +245,7 @@ function smart-suggestion() {
     echo "    - SMART_SUGGESTION_KEY: Key to press to get suggestions (default: ^o, value: $SMART_SUGGESTION_KEY)."
     echo "    - SMART_SUGGESTION_RECOVER_KEY: Key to press to recover last prompt (default: ^[^o, value: $SMART_SUGGESTION_RECOVER_KEY)."
     echo "    - SMART_SUGGESTION_SEND_CONTEXT: If \`true\`, smart-suggestion will send context information (whoami, shell, pwd, etc.) to the AI model (default: true, value: $SMART_SUGGESTION_SEND_CONTEXT)."
-    echo "    - SMART_SUGGESTION_AI_PROVIDER: AI provider to use ('openai', 'openai_compatible', 'azure_openai', 'anthropic', 'gemini', or 'deepseek', value: $SMART_SUGGESTION_AI_PROVIDER)."
+    echo "    - SMART_SUGGESTION_AI_PROVIDER: AI provider to use ('openai', 'openai_compatible', 'azure_openai', 'anthropic', 'gemini', or 'deepseek'). If empty, uses default_provider from config file (value: ${SMART_SUGGESTION_AI_PROVIDER:-"(using config file default)"})."
     echo "    - SMART_SUGGESTION_DEBUG: Enable debug logging (default: false, value: $SMART_SUGGESTION_DEBUG)."
     echo "    - SMART_SUGGESTION_AUTO_UPDATE: Enable automatic update checking (default: true, value: $SMART_SUGGESTION_AUTO_UPDATE)."
     echo "    - SMART_SUGGESTION_UPDATE_INTERVAL: Days between update checks (default: 7, value: $SMART_SUGGESTION_UPDATE_INTERVAL)."
