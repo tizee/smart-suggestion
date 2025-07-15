@@ -26,6 +26,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/yetone/smart-suggestion/pkg"
 	"github.com/yetone/smart-suggestion/pkg/config"
+	"github.com/yetone/smart-suggestion/pkg/privacy"
 	"golang.org/x/term"
 )
 
@@ -1310,7 +1311,17 @@ func getShellHistory() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to run history command: %w", err)
 	}
-	return strings.TrimSpace(string(output)), nil
+
+	historyText := strings.TrimSpace(string(output))
+
+	// Apply privacy filtering
+	filterConfig := getPrivacyFilterConfigFromEnv()
+	if filterConfig != nil && filterConfig.Enabled {
+		filter := privacy.NewFilter(filterConfig)
+		historyText = filter.FilterMultilineText(historyText)
+	}
+
+	return historyText, nil
 }
 
 // createProcessLock creates a lock file to prevent duplicate processes
@@ -1776,6 +1787,16 @@ func runProxy(cmd *cobra.Command, args []string) {
 	}
 }
 
+// applyPrivacyFilterToContent applies privacy filtering to shell buffer content
+func applyPrivacyFilterToContent(content string) string {
+	filterConfig := getPrivacyFilterConfigFromEnv()
+	if filterConfig != nil && filterConfig.Enabled {
+		filter := privacy.NewFilter(filterConfig)
+		return filter.FilterMultilineText(content)
+	}
+	return content
+}
+
 // getShellBuffer gets terminal buffer content using multiple methods
 func getShellBuffer() (string, error) {
 	content, err := doGetShellBuffer()
@@ -1791,7 +1812,8 @@ func doGetShellBuffer() (string, error) {
 		cmd := exec.Command("tmux", "capture-pane", "-pS", "-")
 		output, err := cmd.Output()
 		if err == nil {
-			return strings.TrimSpace(string(output)), nil
+			content := strings.TrimSpace(string(output))
+			return applyPrivacyFilterToContent(content), nil
 		}
 		if debug {
 			logDebug("Failed to get tmux buffer", map[string]any{
@@ -1805,7 +1827,8 @@ func doGetShellBuffer() (string, error) {
 		cmd := exec.Command("kitten", "@", "get-text", "--extent", "all")
 		output, err := cmd.Output()
 		if err == nil {
-			return strings.TrimSpace(string(output)), nil
+			content := strings.TrimSpace(string(output))
+			return applyPrivacyFilterToContent(content), nil
 		}
 		if debug {
 			logDebug("Failed to get kitty scrollback buffer", map[string]any{
@@ -1820,7 +1843,7 @@ func doGetShellBuffer() (string, error) {
 		sessionLogFile := getSessionBasedLogFile(proxyLogFile, currentSessionID)
 		content, err := readLatestProxyContent(sessionLogFile)
 		if err == nil {
-			return content, nil
+			return applyPrivacyFilterToContent(content), nil
 		}
 		if debug {
 			logDebug("Failed to read session proxy log", map[string]any{
@@ -1835,7 +1858,7 @@ func doGetShellBuffer() (string, error) {
 	if proxyLogFile != "" {
 		content, err := readLatestProxyContent(proxyLogFile)
 		if err == nil {
-			return content, nil
+			return applyPrivacyFilterToContent(content), nil
 		}
 		if debug {
 			logDebug("Failed to read base proxy log", map[string]any{
@@ -1848,13 +1871,13 @@ func doGetShellBuffer() (string, error) {
 	// Try screen if available
 	content, err := getScreenBuffer()
 	if err == nil {
-		return content, nil
+		return applyPrivacyFilterToContent(content), nil
 	}
 
 	// Try to get terminal buffer using tput if available
 	content, err = getTerminalBufferWithTput()
 	if err == nil {
-		return content, nil
+		return applyPrivacyFilterToContent(content), nil
 	}
 
 	return "", fmt.Errorf("no terminal buffer available - not in tmux/screen session and no proxy log found")
@@ -2450,4 +2473,59 @@ func runConfigValidate(cmd *cobra.Command, args []string) {
 	if cfg.DefaultProvider != "" {
 		fmt.Printf("\nDefault provider: %s\n", cfg.DefaultProvider)
 	}
+}
+
+// getPrivacyFilterConfigFromEnv returns privacy filter configuration based on environment variables and config file
+func getPrivacyFilterConfigFromEnv() *privacy.FilterConfig {
+	// Check if privacy filtering is explicitly disabled via environment variable
+	if envDisabled := os.Getenv("SMART_SUGGESTION_PRIVACY_FILTER"); envDisabled == "false" || envDisabled == "disabled" {
+		return &privacy.FilterConfig{
+			Enabled: false,
+		}
+	}
+
+	// Try to load from config file
+	cfg, err := config.LoadConfigFromEnv()
+	if err != nil {
+		// If config file is not available, use default privacy filter config
+		if debug {
+			logDebug("Failed to load config for privacy filter, using defaults", map[string]any{
+				"error": err.Error(),
+			})
+		}
+		return privacy.DefaultFilterConfig()
+	}
+
+	// Get privacy filter config from loaded configuration
+	filterConfig := cfg.GetPrivacyFilterConfig()
+
+	// Allow environment variable to override the filter level
+	if envLevel := os.Getenv("SMART_SUGGESTION_PRIVACY_LEVEL"); envLevel != "" {
+		switch strings.ToLower(envLevel) {
+		case "none", "off", "disabled":
+			filterConfig.Level = privacy.FilterLevelNone
+			filterConfig.Enabled = false
+		case "basic":
+			filterConfig.Level = privacy.FilterLevelBasic
+			filterConfig.Enabled = true
+		case "moderate":
+			filterConfig.Level = privacy.FilterLevelModerate
+			filterConfig.Enabled = true
+		case "strict":
+			filterConfig.Level = privacy.FilterLevelStrict
+			filterConfig.Enabled = true
+		}
+	}
+
+	// Allow environment variable to completely enable/disable filtering
+	if envEnabled := os.Getenv("SMART_SUGGESTION_PRIVACY_FILTER"); envEnabled != "" {
+		switch strings.ToLower(envEnabled) {
+		case "true", "enabled", "on", "yes":
+			filterConfig.Enabled = true
+		case "false", "disabled", "off", "no":
+			filterConfig.Enabled = false
+		}
+	}
+
+	return filterConfig
 }

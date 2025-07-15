@@ -35,6 +35,14 @@
 (( ! ${+SMART_SUGGESTION_AI_PROVIDER} )) &&
     typeset -g SMART_SUGGESTION_AI_PROVIDER=""
 
+# Privacy filter configuration - enabled by default for security
+(( ! ${+SMART_SUGGESTION_PRIVACY_FILTER} )) &&
+    typeset -g SMART_SUGGESTION_PRIVACY_FILTER=true
+
+# Privacy filter level configuration
+(( ! ${+SMART_SUGGESTION_PRIVACY_LEVEL} )) &&
+    typeset -g SMART_SUGGESTION_PRIVACY_LEVEL=basic
+
 if [[ "$SMART_SUGGESTION_DEBUG" == 'true' ]]; then
     touch /tmp/smart-suggestion.log
 fi
@@ -246,10 +254,12 @@ function smart-suggestion() {
     echo "    - SMART_SUGGESTION_RECOVER_KEY: Key to press to recover last prompt (default: ^[^o, value: $SMART_SUGGESTION_RECOVER_KEY)."
     echo "    - SMART_SUGGESTION_SEND_CONTEXT: If \`true\`, smart-suggestion will send context information (whoami, shell, pwd, etc.) to the AI model (default: true, value: $SMART_SUGGESTION_SEND_CONTEXT)."
     echo "    - SMART_SUGGESTION_AI_PROVIDER: AI provider to use ('openai', 'openai_compatible', 'azure_openai', 'anthropic', 'gemini', or 'deepseek'). If empty, uses default_provider from config file (value: ${SMART_SUGGESTION_AI_PROVIDER:-"(using config file default)"})."
+    echo "    - SMART_SUGGESTION_PRIVACY_FILTER: Enable/disable privacy filtering for context data (default: true, value: ${SMART_SUGGESTION_PRIVACY_FILTER:-"true"})."
+    echo "    - SMART_SUGGESTION_PRIVACY_LEVEL: Privacy filtering level ('none', 'basic', 'moderate', 'strict') (default: basic, value: ${SMART_SUGGESTION_PRIVACY_LEVEL:-"basic"})."
     echo "    - SMART_SUGGESTION_DEBUG: Enable debug logging (default: false, value: $SMART_SUGGESTION_DEBUG)."
     echo "    - SMART_SUGGESTION_AUTO_UPDATE: Enable automatic update checking (default: true, value: $SMART_SUGGESTION_AUTO_UPDATE)."
     echo "    - SMART_SUGGESTION_UPDATE_INTERVAL: Days between update checks (default: 7, value: $SMART_SUGGESTION_UPDATE_INTERVAL)."
-    echo "    - SMART_SUGGESTION_BINARY: Days between update checks (value: $SMART_SUGGESTION_BINARY)."
+    echo "    - SMART_SUGGESTION_BINARY: Binary path (value: $SMART_SUGGESTION_BINARY)."
 }
 
 zle -N _do_smart_suggestion
