@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/yetone/smart-suggestion/pkg/privacy"
 )
 
 // ProviderConfig represents the configuration for a single AI provider
@@ -32,14 +34,16 @@ type Config struct {
 	Gemini           *ProviderConfig    `json:"gemini,omitempty"`
 	DeepSeek         *ProviderConfig    `json:"deepseek,omitempty"`
 
-	// General settings (only provider-related)
-	DefaultProvider string `json:"default_provider,omitempty"`
+	// General settings
+	DefaultProvider string                    `json:"default_provider,omitempty"`
+	PrivacyFilter   *privacy.FilterConfig    `json:"privacy_filter,omitempty"`
 }
 
 // DefaultConfig returns a configuration with default values
 func DefaultConfig() *Config {
 	return &Config{
 		DefaultProvider: "openai",
+		PrivacyFilter:   privacy.DefaultFilterConfig(),
 		OpenAI: &ProviderConfig{
 			BaseURL: "https://api.openai.com",
 			Model:   "gpt-4o-mini",
@@ -235,6 +239,11 @@ func mergeConfigs(config, defaultConfig *Config) {
 		config.DefaultProvider = defaultConfig.DefaultProvider
 	}
 
+	// Merge privacy filter config
+	if config.PrivacyFilter == nil {
+		config.PrivacyFilter = defaultConfig.PrivacyFilter
+	}
+
 	// Merge provider configs
 	if config.OpenAI == nil {
 		config.OpenAI = defaultConfig.OpenAI
@@ -287,4 +296,12 @@ func mergeProviderConfig(provider, defaultProvider *ProviderConfig) {
 	if provider.APIVersion == "" {
 		provider.APIVersion = defaultProvider.APIVersion
 	}
+}
+
+// GetPrivacyFilterConfig returns the privacy filter configuration with defaults if not configured
+func (c *Config) GetPrivacyFilterConfig() *privacy.FilterConfig {
+	if c.PrivacyFilter == nil {
+		return privacy.DefaultFilterConfig()
+	}
+	return c.PrivacyFilter
 }

@@ -18,7 +18,8 @@ Get AI-powered command suggestions **directly** in your zsh shell. No complex se
 
 - **🚀 Context-aware intelligent prediction**: Predicts the next command you are likely to input based on context (history, aliases, terminal buffer)
 - **🤖 Multiple AI Providers**: Support for OpenAI GPT, Anthropic Claude, Google Gemini, DeepSeek, and any OpenAI-compatible API
-- **🔧 Highly Configurable**: Customize keybindings, AI provider, context sharing, and more
+- **🔒 Privacy Protection**: Built-in privacy filtering to prevent sensitive data (API keys, passwords, tokens) from being sent to AI providers
+- **🔧 Highly Configurable**: Customize keybindings, AI provider, context sharing, privacy filtering, and more
 
 ## Questions
 
@@ -49,7 +50,7 @@ This script will:
 - Detect your platform (Linux, macOS, Windows)
 - Download the appropriate pre-built binary
 - Install the plugin to `~/.config/smart-suggestion`
-- Configure your `~/.zshrc` automatically with proxy mode enabled by default
+- Configure your `~/.zshrc` automatically with proxy mode enabled by default ⚠️ **See security considerations below**
 - Check for zsh-autosuggestions dependency
 
 **Uninstall:**
@@ -259,6 +260,40 @@ export SMART_SUGGESTION_PROVIDER_FILE="~/.config/smart-suggestion/config.json"
 }
 ```
 
+#### Privacy Configuration
+
+**Privacy Filtering** (Enabled by default): Smart Suggestion includes built-in privacy protection to prevent sensitive information from being sent to AI providers.
+
+```json
+{
+  "privacy_filter": {
+    "enabled": true,
+    "level": 1,
+    "replacement_text": "[REDACTED]"
+  }
+}
+```
+
+**Privacy Filter Levels**:
+- `0` (`none`): No filtering (not recommended)
+- `1` (`basic`): Filter common API keys, tokens, and secrets (default)
+- `2` (`moderate`): Include emails, IPs, and advanced patterns
+- `3` (`strict`): Aggressive filtering including potential secrets
+
+**What gets filtered**:
+- **API Keys**: OpenAI (sk-*, pk-*), AWS, GitHub, Slack tokens
+- **Environment Variables**: `export API_KEY=secret` patterns and **any variable containing KEY/TOKEN/SECRET/PASSWORD**
+- **Bearer Tokens**: Authorization headers and tokens
+- **Database URLs**: Connection strings with credentials
+- **Command Passwords**: `curl -u`, `--password` flags
+- **JWT Tokens**: JSON Web Tokens
+- **SSH Keys**: Private key markers
+- **Service-Specific Keys**: Stripe, Twilio, SendGrid, Mailgun, etc.
+- **Cloud Provider Tokens**: DigitalOcean, Vultr, Linode
+- **CI/CD Tokens**: GitLab, Jenkins, CI systems
+- **Echo Commands**: `echo $API_KEY` and similar sensitive variable reveals
+- **Command Output**: Standalone secret values that appear to be API keys or tokens
+
 #### Popular OpenAI-Compatible Services
 
 The `openai_compatible` provider supports many third-party services:
@@ -312,8 +347,10 @@ Configure the plugin behavior with these environment variables:
 | `SMART_SUGGESTION_PROVIDER_FILE`   | Path to configuration file            | `~/.config/smart-suggestion/config.json` | Any valid JSON file path |
 | `SMART_SUGGESTION_AI_PROVIDER`     | AI provider to use                    | `openai` | `openai`, `openai_compatible`, `azure_openai`, `anthropic`, `gemini`, `deepseek` |
 | `SMART_SUGGESTION_KEY`             | Keybinding to trigger suggestions     | `^o`          | Any zsh keybinding                                          |
-| `SMART_SUGGESTION_SEND_CONTEXT`    | Send shell context to AI              | `true`        | `true`, `false`                                             |
-| `SMART_SUGGESTION_PROXY_MODE`      | Enable proxy mode for better context  | `true`        | `true`, `false`                                             |
+| `SMART_SUGGESTION_SEND_CONTEXT`    | Send shell context to AI ⚠️ **Privacy Risk** | `true`        | `true`, `false`                                             |
+| `SMART_SUGGESTION_PRIVACY_FILTER`  | Enable privacy filtering of sensitive data | `true`        | `true`, `false`                                             |
+| `SMART_SUGGESTION_PRIVACY_LEVEL`   | Privacy filtering sensitivity level   | `basic`       | `none`, `basic`, `moderate`, `strict`                      |
+| `SMART_SUGGESTION_PROXY_MODE`      | Enable proxy mode ⚠️ **Privacy Risk, Shell Nesting** | `true`        | `true`, `false`                                             |
 | `SMART_SUGGESTION_DEBUG`           | Enable debug logging                  | `false`       | `true`, `false`                                             |
 | `SMART_SUGGESTION_SYSTEM_PROMPT`   | Custom system prompt                  | Built-in      | Any string                                                  |
 | `SMART_SUGGESTION_AUTO_UPDATE`     | Enable automatic update checking      | `true`        | `true`, `false`                                             |
@@ -435,13 +472,149 @@ Smart Suggestion now automatically enables **proxy mode** by default, which prov
 - **Provides rich context** to the AI including command outputs and error messages
 - **Works seamlessly** across different terminal environments
 
-You can disable proxy mode if needed:
+#### ⚠️ Important Security and Privacy Considerations
+
+**Proxy mode creates a nested shell environment** which may cause:
+- **Shell nesting issues**: You may need to type `exit` twice to fully close your terminal
+- **Privacy risks**: All commands, outputs, and sensitive information are recorded and potentially sent to AI providers
+- **Data exposure**: API keys, passwords, personal files, and system information may be logged
+
+**What gets recorded and sent:**
+- All shell commands you execute
+- Command outputs and error messages
+- System context (username, hostname, current directory)
+- Environment variables and shell history
+- Any sensitive data that appears in your terminal
+
+#### Disabling Proxy Mode
+
+For privacy and to avoid shell nesting issues, you can disable proxy mode:
 
 ```bash
 export SMART_SUGGESTION_PROXY_MODE=false
 ```
 
-For advanced proxy configuration, see [PROXY_USAGE.md](PROXY_USAGE.md).
+You can also disable context sending entirely:
+
+```bash
+export SMART_SUGGESTION_SEND_CONTEXT=false
+```
+
+**Recommended for security-conscious users**: Disable both proxy mode and context sending to minimize data exposure while still getting AI command suggestions based on your current input.
+
+### Privacy Protection
+
+Smart Suggestion includes **built-in privacy filtering** enabled by default to protect your sensitive information:
+
+#### Automatic Privacy Filtering
+
+The tool automatically filters sensitive patterns from shell history and terminal buffer before sending to AI providers:
+
+- **API Keys**: OpenAI, Anthropic, Google, AWS, GitHub, Slack tokens
+- **Environment Variables**: `export API_KEY=secret` patterns and **any variable containing KEY/TOKEN/SECRET/PASSWORD**
+- **Bearer Tokens**: Authorization headers
+- **Database URLs**: Connection strings with credentials (MySQL, PostgreSQL, MongoDB, Redis)
+- **Passwords**: Command line password flags
+- **JWT Tokens**: JSON Web Tokens
+- **SSH Keys**: Private key identifiers
+- **Service-Specific Keys**: Stripe, Twilio, SendGrid, Mailgun, Azure, DeepSeek
+- **Cloud Provider Tokens**: DigitalOcean, Vultr, Linode
+- **CI/CD Tokens**: GitLab, Jenkins, CI systems
+- **Secrets**: JWT secrets, encryption keys, session secrets
+- **Echo Commands**: `echo $API_KEY` and similar sensitive variable reveals
+- **Command Output**: Standalone secret values that appear to be API keys or tokens
+
+#### Privacy Configuration
+
+**Environment Variables**:
+```bash
+# Disable privacy filtering (not recommended)
+export SMART_SUGGESTION_PRIVACY_FILTER=false
+
+# Set privacy level (none, basic, moderate, strict)
+export SMART_SUGGESTION_PRIVACY_LEVEL=strict
+```
+
+**Configuration File**:
+```json
+{
+  "privacy_filter": {
+    "enabled": true,
+    "level": 1,
+    "replacement_text": "[REDACTED]",
+    "custom_patterns": ["my_custom_pattern_\\w+"]
+  }
+}
+```
+
+**Privacy Levels**:
+- **`none`**: No filtering (⚠️ not recommended)
+- **`basic`**: Filter common secrets (default, recommended)
+- **`moderate`**: Include emails, IPs, advanced patterns
+- **`strict`**: Aggressive filtering of potential secrets
+
+**Note**: Even with privacy filtering enabled, sensitive information may still be logged locally in debug files and proxy logs. For maximum security, consider disabling context sending entirely.
+
+#### Privacy Level Recommendations
+
+**When both proxy mode and context sending are enabled**, choose your privacy level based on your environment:
+
+**🔒 Strict (Recommended for Production)**:
+```bash
+export SMART_SUGGESTION_PRIVACY_LEVEL=strict
+```
+- **Use when**: Production servers, enterprise environments, handling sensitive data
+- **Filters**: All API keys, tokens, emails, IPs, long strings (32+ chars), credit card numbers
+- **Trade-off**: May filter some legitimate content (file paths, hashes) but maximizes security
+
+**⚖️ Moderate (Balanced)**:
+```bash
+export SMART_SUGGESTION_PRIVACY_LEVEL=moderate
+```
+- **Use when**: Personal development, small teams, daily coding work
+- **Filters**: Basic patterns plus emails in sensitive contexts, AWS/GitHub tokens, SSH keys
+- **Trade-off**: Good privacy protection with minimal false positives
+
+**🚨 Basic (Use with caution)**:
+```bash
+export SMART_SUGGESTION_PRIVACY_LEVEL=basic  # Default
+```
+- **Use when**: Personal/learning environments, no real sensitive data
+- **Filters**: Common API key formats, bearer tokens, database URLs
+- **Trade-off**: Minimal filtering, may miss non-standard sensitive patterns
+
+#### Configuration Examples
+
+**Development Environment**:
+```bash
+export SMART_SUGGESTION_PROXY_MODE=true
+export SMART_SUGGESTION_SEND_CONTEXT=true
+export SMART_SUGGESTION_PRIVACY_LEVEL=moderate
+```
+
+**Production/Sensitive Environment**:
+```bash
+export SMART_SUGGESTION_PROXY_MODE=true
+export SMART_SUGGESTION_SEND_CONTEXT=true
+export SMART_SUGGESTION_PRIVACY_LEVEL=strict
+```
+
+**Privacy-First Approach**:
+```bash
+export SMART_SUGGESTION_PROXY_MODE=false      # No terminal recording
+export SMART_SUGGESTION_SEND_CONTEXT=true     # Limited context only
+export SMART_SUGGESTION_PRIVACY_LEVEL=basic   # Basic filtering sufficient
+```
+
+#### Monitoring Privacy Filtering
+
+Enable debug mode to verify filtering effectiveness:
+```bash
+export SMART_SUGGESTION_DEBUG=true
+tail -f /tmp/smart-suggestion.log
+```
+
+If legitimate content is being filtered, adjust the privacy level or add custom patterns to your configuration file.
 
 ## Troubleshooting
 
@@ -461,6 +634,9 @@ Debug logs are written to `/tmp/smart-suggestion.log`.
 2. **No suggestions**: Check your API key and internet connection
 3. **Wrong suggestions**: Try adjusting the context settings or system prompt
 4. **Key binding conflicts**: Change `SMART_SUGGESTION_KEY` to a different key
+5. **Need to type `exit` twice to close terminal**: This is caused by proxy mode creating a nested shell. Disable proxy mode with `export SMART_SUGGESTION_PROXY_MODE=false`
+6. **Privacy concerns**: Proxy mode records all terminal activity. Enable privacy filtering with `export SMART_SUGGESTION_PRIVACY_LEVEL=strict` or disable context entirely with `export SMART_SUGGESTION_SEND_CONTEXT=false`
+7. **Sensitive data being filtered**: If legitimate content is being filtered, adjust privacy level with `export SMART_SUGGESTION_PRIVACY_LEVEL=basic` or add custom patterns to config
 
 ### Build Issues
 
