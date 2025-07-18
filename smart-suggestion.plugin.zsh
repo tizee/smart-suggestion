@@ -91,14 +91,14 @@ function _fetch_suggestions() {
 
     # Prepare provider flag (only if SMART_SUGGESTION_AI_PROVIDER is set and non-empty)
     # This allows using default_provider from config file when environment variable is not set
-    local provider_flag=""
+    local provider_args=()
     if [[ -n "$SMART_SUGGESTION_AI_PROVIDER" ]]; then
-        provider_flag="--provider $SMART_SUGGESTION_AI_PROVIDER"
+        provider_args=(--provider "$SMART_SUGGESTION_AI_PROVIDER")
     fi
 
     # Call the Go binary with proper arguments
     "$SMART_SUGGESTION_BINARY" \
-        $provider_flag \
+        "${provider_args[@]}" \
         --input "$input" \
         --output "/tmp/smart_suggestion" \
         $debug_flag \
