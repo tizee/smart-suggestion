@@ -534,15 +534,21 @@ func fetchOpenAI() (string, error) {
 		model = cfg.OpenAI.Model
 	}
 
-	request := OpenAIRequest{
-		Model: model,
-		Messages: []OpenAIMessage{
+	// Build request map to support extra_body
+	requestMap := map[string]interface{}{
+		"model": model,
+		"messages": []OpenAIMessage{
 			{Role: "system", Content: systemPrompt},
 			{Role: "user", Content: input},
 		},
 	}
 
-	jsonData, err := json.Marshal(request)
+	// Merge extra_body if configured
+	if cfg.OpenAI != nil {
+		requestMap = cfg.OpenAI.MergeExtraBody(requestMap)
+	}
+
+	jsonData, err := json.Marshal(requestMap)
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal request: %w", err)
 	}
@@ -639,15 +645,21 @@ func fetchOpenAICompatible() (string, error) {
 		model = cfg.OpenAICompatible.Model
 	}
 
-	request := OpenAIRequest{
-		Model: model,
-		Messages: []OpenAIMessage{
+	// Build request map to support extra_body
+	requestMap := map[string]interface{}{
+		"model": model,
+		"messages": []OpenAIMessage{
 			{Role: "system", Content: systemPrompt},
 			{Role: "user", Content: input},
 		},
 	}
 
-	jsonData, err := json.Marshal(request)
+	// Merge extra_body if configured
+	if cfg.OpenAICompatible != nil {
+		requestMap = cfg.OpenAICompatible.MergeExtraBody(requestMap)
+	}
+
+	jsonData, err := json.Marshal(requestMap)
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal request: %w", err)
 	}
@@ -787,15 +799,21 @@ func fetchAzureOpenAI() (string, error) {
 			resourceName, deploymentName, apiVersion)
 	}
 
-	request := AzureOpenAIRequest{
-		Model: deploymentName, // In Azure OpenAI, this should match the deployment name
-		Messages: []OpenAIMessage{
+	// Build request map to support extra_body
+	requestMap := map[string]interface{}{
+		"model": deploymentName, // In Azure OpenAI, this should match the deployment name
+		"messages": []OpenAIMessage{
 			{Role: "system", Content: systemPrompt},
 			{Role: "user", Content: input},
 		},
 	}
 
-	jsonData, err := json.Marshal(request)
+	// Merge extra_body if configured
+	if cfg.AzureOpenAI != nil {
+		requestMap = cfg.AzureOpenAI.ProviderConfig.MergeExtraBody(requestMap)
+	}
+
+	jsonData, err := json.Marshal(requestMap)
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal request: %w", err)
 	}
@@ -887,16 +905,22 @@ func fetchAnthropic() (string, error) {
 		model = cfg.Anthropic.Model
 	}
 
-	request := AnthropicRequest{
-		Model:     model,
-		MaxTokens: 1000,
-		System:    systemPrompt,
-		Messages: []AnthropicMessage{
+	// Build request map to support extra_body
+	requestMap := map[string]interface{}{
+		"model":     model,
+		"max_tokens": 1000,
+		"system":    systemPrompt,
+		"messages": []AnthropicMessage{
 			{Role: "user", Content: input},
 		},
 	}
 
-	jsonData, err := json.Marshal(request)
+	// Merge extra_body if configured
+	if cfg.Anthropic != nil {
+		requestMap = cfg.Anthropic.MergeExtraBody(requestMap)
+	}
+
+	jsonData, err := json.Marshal(requestMap)
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal request: %w", err)
 	}
@@ -1210,11 +1234,17 @@ func fetchGemini() (string, error) {
 		Role:  "user",
 	})
 
-	request := GeminiRequest{
-		Contents: contents,
+	// Build request map to support extra_body
+	requestMap := map[string]interface{}{
+		"contents": contents,
 	}
 
-	jsonData, err := json.Marshal(request)
+	// Merge extra_body if configured
+	if cfg.Gemini != nil {
+		requestMap = cfg.Gemini.MergeExtraBody(requestMap)
+	}
+
+	jsonData, err := json.Marshal(requestMap)
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal request: %w", err)
 	}
@@ -2051,15 +2081,21 @@ func fetchDeepSeek() (string, error) {
 		model = cfg.DeepSeek.Model
 	}
 
-	request := DeepSeekRequest{
-		Model: model,
-		Messages: []OpenAIMessage{
+	// Build request map to support extra_body
+	requestMap := map[string]interface{}{
+		"model": model,
+		"messages": []OpenAIMessage{
 			{Role: "system", Content: systemPrompt},
 			{Role: "user", Content: input},
 		},
 	}
 
-	jsonData, err := json.Marshal(request)
+	// Merge extra_body if configured
+	if cfg.DeepSeek != nil {
+		requestMap = cfg.DeepSeek.MergeExtraBody(requestMap)
+	}
+
+	jsonData, err := json.Marshal(requestMap)
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal request: %w", err)
 	}

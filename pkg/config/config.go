@@ -11,10 +11,11 @@ import (
 
 // ProviderConfig represents the configuration for a single AI provider
 type ProviderConfig struct {
-	APIKey     string `json:"api_key,omitempty"`
-	BaseURL    string `json:"base_url,omitempty"`
-	Model      string `json:"model,omitempty"`
-	APIVersion string `json:"api_version,omitempty"`
+	APIKey     string                 `json:"api_key,omitempty"`
+	BaseURL    string                 `json:"base_url,omitempty"`
+	Model      string                 `json:"model,omitempty"`
+	APIVersion string                 `json:"api_version,omitempty"`
+	ExtraBody  map[string]interface{} `json:"extra_body,omitempty"`
 }
 
 // AzureOpenAIConfig represents specific configuration for Azure OpenAI
@@ -304,4 +305,22 @@ func (c *Config) GetPrivacyFilterConfig() *privacy.FilterConfig {
 		return privacy.DefaultFilterConfig()
 	}
 	return c.PrivacyFilter
+}
+
+// MergeExtraBody merges the extra_body configuration into a request map.
+// It returns a new map with all fields from the original request plus any extra fields.
+// Extra body fields will override request fields if there's a conflict.
+func (p *ProviderConfig) MergeExtraBody(request map[string]interface{}) map[string]interface{} {
+	if len(p.ExtraBody) == 0 {
+		return request
+	}
+
+	result := make(map[string]interface{}, len(request)+len(p.ExtraBody))
+	for k, v := range request {
+		result[k] = v
+	}
+	for k, v := range p.ExtraBody {
+		result[k] = v
+	}
+	return result
 }
