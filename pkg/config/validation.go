@@ -161,6 +161,19 @@ func validateProviderConfig(providerName string, config *ProviderConfig) Validat
 				Message: err.Error(),
 			})
 		}
+
+		// Special validation for openai_compatible provider
+		// Check if base_url ends with version prefix but not the full path
+		if providerName == "openai_compatible" && hasVersionPrefix(config.BaseURL) {
+			errors = append(errors, ValidationError{
+				Field: prefix + ".base_url",
+				Message: fmt.Sprintf("base_url '%s' ends with version prefix (e.g., /v4). "+
+					"The provider auto-appends '/v1/chat/completions' when no version component is present. "+
+					"For non-standard APIs, use the full URL path including '/chat/completions'. "+
+					"Example: https://open.bigmodel.cn/api/paas/v4/chat/completions",
+					config.BaseURL),
+			})
+		}
 	}
 
 	// Validate model name if provided
@@ -316,5 +329,31 @@ func contains(slice []string, item string) bool {
 			return true
 		}
 	}
+	return false
+}
+
+// hasVersionPrefix checks if a URL path ends with a version prefix like /v1, /v2, etc.
+func hasVersionPrefix(urlString string) bool {
+	trimmedURL := strings.TrimSuffix(urlString, "/")
+
+	// Check if URL path ends with /v{digits} pattern
+	// Split by '/' and check the last segment
+	parts := strings.Split(trimmedURL, "/")
+	if len(parts) == 0 {
+		return false
+	}
+
+	lastSegment := parts[len(parts)-1]
+	// Check if last segment matches v{digits} pattern
+	if len(lastSegment) >= 2 && lastSegment[0] == 'v' {
+		// Check if remaining characters are all digits
+		for _, c := range lastSegment[1:] {
+			if c < '0' || c > '9' {
+				return false
+			}
+		}
+		return true
+	}
+
 	return false
 }
